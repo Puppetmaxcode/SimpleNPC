@@ -12,7 +12,7 @@ class CheckUpdateTask extends AsyncTask
 {
     private const UPDATES_URL = "https://raw.githubusercontent.com/brokiem/SimpleNPC/master/updates.json";
     /** @var string */
-    private $version;
+    private string $version;
 
     public function __construct(string $version)
     {
@@ -30,12 +30,12 @@ class CheckUpdateTask extends AsyncTask
         }
     }
 
-    public function onCompletion(Server $server): void
+    public function onCompletion(): void
     {
         [$latestVersion, $updateDate, $updateUrl] = $this->getResult();
 
         if ($this->version !== $latestVersion) {
-            $server->getLogger()->notice(
+             Server::getInstance()->getLogger()->notice(
                 "SimpleNPC v$latestVersion has been released on $updateDate. Download the new update at $updateUrl"
             );
         }

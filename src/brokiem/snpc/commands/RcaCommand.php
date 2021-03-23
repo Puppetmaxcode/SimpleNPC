@@ -4,20 +4,33 @@ declare(strict_types=1);
 
 namespace brokiem\snpc\commands;
 
+use brokiem\snpc\SimpleNPC;
+use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
-use pocketmine\command\PluginCommand;
-use pocketmine\Player;
+use pocketmine\player\Player;
 use pocketmine\plugin\Plugin;
+use pocketmine\plugin\PluginOwned;
 use pocketmine\utils\TextFormat;
 
-class RcaCommand extends PluginCommand
+class RcaCommand extends Command implements PluginOwned
 {
 
-    public function __construct(string $name, Plugin $owner)
+    /**
+     * @var SimpleNPC
+     */
+    private SimpleNPC $owner;
+
+    public function __construct(string $name, SimpleNPC $owner)
     {
-        parent::__construct($name, $owner);
+        parent::__construct($name);
         $this->setPermission("snpc.rca");
         $this->setDescription("Execute command by player like sudo");
+        $this->owner = $owner;
+    }
+
+    public function getOwningPlugin(): Plugin
+    {
+        return $this->owner;
     }
 
     public function execute(CommandSender $sender, string $commandLabel, array $args): bool
@@ -31,9 +44,9 @@ class RcaCommand extends PluginCommand
             return true;
         }
 
-        $player = $this->getPlugin()->getServer()->getPlayerExact(array_shift($args));
+        $player = $this->getOwningPlugin()->getServer()->getPlayerExact(array_shift($args));
         if ($player instanceof Player) {
-            $this->getPlugin()->getServer()->getCommandMap()->dispatch($player, trim(implode(" ", $args)));
+            $this->getOwningPlugin()->getServer()->getCommandMap()->dispatch($player, trim(implode(" ", $args)));
             return true;
         }
 

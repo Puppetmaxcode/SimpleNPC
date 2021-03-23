@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace brokiem\snpc\entity\npc;
 
 use brokiem\snpc\entity\BaseNPC;
-use pocketmine\entity\Entity;
+use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 
 class VillagerNPC extends BaseNPC {
 
-    public const NETWORK_ID = Entity::VILLAGER;
+    public const NETWORK_ID = EntityIds::VILLAGER;
 
-    public $height = 1.95;
-    public $width = 1;
+    public float $height = 1.95;
+    public float $width = 1;
 }

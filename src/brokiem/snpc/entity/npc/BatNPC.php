@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace brokiem\snpc\entity\npc;
 
 use brokiem\snpc\entity\BaseNPC;
-use pocketmine\entity\Entity;
+use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 
 class BatNPC extends BaseNPC {
 
-    public const NETWORK_ID = Entity::BAT;
+    public const NETWORK_ID = EntityIds::BAT;
 
-    public $height = 0.9;
-    public $width = 1;
+    public float $height = 0.9;
+    public float $width = 1;
 }

@@ -7,9 +7,9 @@ namespace brokiem\snpc\task\async;
 use brokiem\snpc\entity\CustomHuman;
 use brokiem\snpc\entity\WalkingHuman;
 use brokiem\snpc\event\SNPCCreationEvent;
-use pocketmine\entity\Entity;
+use pocketmine\entity\EntityDataHelper;
 use pocketmine\entity\Skin;
-use pocketmine\level\Location;
+use pocketmine\entity\Location;
 use pocketmine\nbt\tag\ByteArrayTag;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\StringTag;
@@ -20,16 +20,16 @@ use pocketmine\utils\TextFormat;
 
 class SpawnHumanNPCTask extends AsyncTask
 {
-    /** @var string */
-    private $skinUrl;
     /** @var null|string */
-    private $nametag;
+    private ?string $skinUrl;
+    /** @var null|string */
+    private ?string $nametag;
     /** @var bool */
-    private $canWalk;
+    private bool $canWalk;
     /** @var string */
-    private $username;
+    private string $username;
     /** @var string */
-    private $dataPath;
+    private string $dataPath;
 
     public function __construct(?string $nametag, string $username, string $dataPath, bool $canWalk = false, ?string $skinUrl = null, CompoundTag $command = null, Skin $skin = null, Location $customPos = null)
     {
@@ -39,7 +39,7 @@ class SpawnHumanNPCTask extends AsyncTask
         $this->skinUrl = $skinUrl;
         $this->dataPath = $dataPath;
 
-        $this->storeLocal([$command, $skin, $customPos]);
+        $this->storeLocal("local", [$command, $skin, $customPos]);
     }
 
     public function onRun(): void
@@ -86,10 +86,10 @@ class SpawnHumanNPCTask extends AsyncTask
         }
     }
 
-    public function onCompletion(Server $server): void
+    public function onCompletion(): void
     {
-        $player = $server->getPlayerExact($this->username);
-        [$commands, $skin, $customPos] = $this->fetchLocal();
+        $player = Server::getInstance()->getPlayerExact($this->username);
+        [$commands, $skin, $customPos] = $this->fetchLocal("local");
 
         if ($player === null) {
             return;
@@ -98,21 +98,21 @@ class SpawnHumanNPCTask extends AsyncTask
         $player->saveNBT();
 
         $skin = $skin instanceof Skin ? $skin->getSkinData() : $this->getResult();
-        $nbt = Entity::createBaseNBT($player, null, $player->getYaw(), $player->getPitch());
+        $nbt = EntityDataHelper::createBaseNBT($player->getPosition(), null, $player->getLocation()->getYaw(), $player->getLocation()->getPitch());
 
         if ($customPos instanceof Location) {
-            $nbt = Entity::createBaseNBT($customPos, null, $customPos->getYaw(), $customPos->getPitch());
+            $nbt = EntityDataHelper::createBaseNBT($customPos, null, $customPos->getYaw(), $customPos->getPitch());
         }
 
-        $nbt->setTag($commands ?? new CompoundTag("Commands", []));
-        $nbt->setTag(new CompoundTag("Skin", [
+        $nbt->setTag("commands", $commands ?? new CompoundTag("Commands", []));
+        $nbt->setTag("Skin", new CompoundTag("Skin", [
                 "Name" => new StringTag("Name", $player->getSkin()->getSkinId()),
                 "Data" => new ByteArrayTag("Data", in_array(strlen($skin ?? "somerandomstring"), Skin::ACCEPTED_SKIN_SIZES, true) ? $skin : $player->getSkin()->getSkinData())
             ])
         );
         $nbt->setShort("Walk", $this->canWalk ? 1 : 0);
 
-        $entity = $this->canWalk ? new WalkingHuman($player->getLevel(), $nbt) : new CustomHuman($player->getLevel(), $nbt);
+        $entity = $this->canWalk ? new WalkingHuman($player->getLocation(), $skin ?? $player->getSkin(), $nbt) : new CustomHuman($player->getLocation(), $skin ?? $player->getSkin(), $nbt);
 
         if ($this->nametag !== null) {
             $entity->setNameTag($this->nametag);

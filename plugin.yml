@@ -1,11 +1,10 @@
 name: SimpleNPC
 main: brokiem\snpc\SimpleNPC
 version: 1.0.1-beta
-api: 3.15.0
+api: 4.0.0
 author: brokiem
 
 mcpe-protocol: [407, 408, 418, 419, 421, 422, 428]
-softdepend: ["Slapper"]
 
 website: https://github.com/brokiem/SimpleNPC
 

@@ -15,24 +15,30 @@ use EasyUI\element\Input;
 use EasyUI\utils\FormResponse;
 use EasyUI\variant\CustomForm;
 use EasyUI\variant\SimpleForm;
+use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
-use pocketmine\command\PluginCommand;
 use pocketmine\entity\Entity;
 use pocketmine\nbt\tag\CompoundTag;
-use pocketmine\network\mcpe\protocol\AddActorPacket;
-use pocketmine\Player;
+use pocketmine\player\Player;
 use pocketmine\plugin\Plugin;
-use pocketmine\scheduler\ClosureTask;
+use pocketmine\plugin\PluginOwned;
 use pocketmine\utils\TextFormat;
-use slapper\entities\SlapperEntity;
-use slapper\entities\SlapperHuman;
 
-class Commands extends PluginCommand
+class Commands extends Command implements PluginOwned
 {
-    public function __construct(string $name, Plugin $owner)
+    /** @var SimpleNPC */
+    private SimpleNPC $owner;
+
+    public function __construct(string $name, SimpleNPC $owner)
     {
-        parent::__construct($name, $owner);
+        parent::__construct($name);
         $this->setDescription("SimpleNPC commands");
+        $this->owner = $owner;
+    }
+
+    public function getOwningPlugin(): Plugin
+    {
+        return $this->owner;
     }
 
     public function execute(CommandSender $sender, string $commandLabel, array $args): bool
@@ -42,7 +48,7 @@ class Commands extends PluginCommand
         }
 
         /** @var SimpleNPC $plugin */
-        $plugin = $this->getPlugin();
+        $plugin = $this->getOwningPlugin();
 
         if (isset($args[0])) {
             switch ($args[0]) {
@@ -109,7 +115,7 @@ class Commands extends PluginCommand
                     }
 
                     if (isset($args[1]) and is_numeric($args[1])) {
-                        $entity = $plugin->getServer()->findEntity((int)$args[1]);
+                        $entity = $plugin->getServer()->getWorldManager()->findEntity((int)$args[1]);
 
                         if ($entity instanceof BaseNPC || $entity instanceof CustomHuman) {
                             if (!$entity->isFlaggedForDespawn()) {
@@ -142,13 +148,13 @@ class Commands extends PluginCommand
                         return true;
                     }
 
-                    $entity = $plugin->getServer()->findEntity((int)$args[1]);
+                    $entity = $plugin->getServer()->getWorldManager()->findEntity((int)$args[1]);
 
                     $customForm = new CustomForm("Manage NPC");
                     $simpleForm = new SimpleForm("Manage NPC");
 
                     if ($entity instanceof BaseNPC || $entity instanceof CustomHuman) {
-                        $editUI = new SimpleForm("Manage NPC", "§aID:§2 $args[1]\n§aClass: §2" . get_class($entity) . "\n§aNametag: §2" . $entity->getNameTag() . "\n§aPosition: §2" . $entity->getFloorX() . "/" . $entity->getFloorY() . "/" . $entity->getFloorZ());
+                        $editUI = new SimpleForm("Manage NPC", "§aID:§2 $args[1]\n§aClass: §2" . get_class($entity) . "\n§aNametag: §2" . $entity->getNameTag() . "\n§aPosition: §2" . $entity->getPosition()->getFloorX() . "/" . $entity->getPosition()->getFloorY() . "/" . $entity->getPosition()->getFloorZ());
 
                         $editUI->addButton(new Button("Add Command", null, function (Player $sender) use ($customForm) {
                             $customForm->addElement("addcmd", new Input("Enter the command here"));
@@ -162,7 +168,7 @@ class Commands extends PluginCommand
                             $simpleForm->addButton(new Button("Entity to You", null, function (Player $sender) use ($entity): void {
                                 $entity->teleport($sender->getLocation());
                                 if ($entity instanceof WalkingHuman) {
-                                    $entity->randomPosition = $entity->asVector3();
+                                    $entity->randomPosition = $entity->getLocation();
                                 }
                                 $sender->sendMessage(TextFormat::GREEN . "Teleported!");
                             }));
@@ -195,93 +201,14 @@ class Commands extends PluginCommand
                         $sender->sendMessage(TextFormat::YELLOW . "SimpleNPC Entity with ID: " . $args[1] . " not found!");
                     }
                     break;
-                case "migrate":
-                    if (!$sender->hasPermission("snpc.migrate")) {
-                        return true;
-                    }
-
-                    if (!$sender instanceof Player) {
-                        return true;
-                    }
-
-                    if ($plugin->getServer()->getPluginManager()->getPlugin("Slapper") !== null) {
-                        if (!isset($args[1]) && !isset($plugin->migrateNPC[$sender->getName()])) {
-                            $plugin->migrateNPC[$sender->getName()] = true;
-
-                            $plugin->getScheduler()->scheduleDelayedTask(new ClosureTask(function () use ($plugin, $sender): void {
-                                if (isset($plugin->migrateNPC[$sender->getName()])) {
-                                    unset($plugin->migrateNPC[$sender->getName()]);
-                                    $sender->sendMessage(TextFormat::YELLOW . "Migrating NPC Cancelled! (10 seconds)");
-                                }
-                            }), 10 * 20);
-
-                            $sender->sendMessage(TextFormat::RED . " \nAre you sure want to migrate your NPC from Slapper to SimpleNPC? \nThis will replace the slapper NPCs with the new Simple NPCs\n\nIf yes, run /migrate confirm, if no, run /migrate cancel\n\n ");
-                            $sender->sendMessage(TextFormat::RED . "NOTE: Make sure all the worlds with the Slapper NPC have been loaded!");
-                            return true;
-                        }
-
-                        if (isset($plugin->migrateNPC[$sender->getName()], $args[1]) && $args[1] === "confirm") {
-                            unset($plugin->migrateNPC[$sender->getName()]);
-                            $sender->sendMessage(TextFormat::DARK_GREEN . "Migrating NPC... Please wait...");
-
-                            foreach ($plugin->getServer()->getLevels() as $level) {
-                                $entity = array_map(static function (Entity $entity) {
-                                }, array_filter($level->getEntities(), static function (Entity $entity): bool {
-                                    return $entity instanceof SlapperHuman or $entity instanceof SlapperEntity;
-                                }));
-
-                                if (count($entity) === 0) {
-                                    $sender->sendMessage(TextFormat::RED . "Migrating failed: No Slapper entity found!");
-                                    return true;
-                                }
-
-                                $error = 0;
-                                foreach ($level->getEntities() as $entity) {
-                                    if ($entity instanceof SlapperEntity) {
-                                        /** @phpstan-ignore-next-line */
-                                        if (NPCManager::createNPC(AddActorPacket::LEGACY_ID_MAP_BC[$entity::TYPE_ID], $sender, $entity->getNameTag(), $entity->namedtag->getCompoundTag("Commands"))) {
-                                            if (!$entity->isFlaggedForDespawn()) {
-                                                $entity->flagForDespawn();
-                                            }
-                                        } else {
-                                            ++$error;
-                                        }
-                                    } elseif ($entity instanceof SlapperHuman) {
-                                        $plugin->getServer()->getAsyncPool()->submitTask(new SpawnHumanNPCTask($entity->getNameTag(), $sender->getName(), $plugin->getDataFolder(), false, null, $entity->namedtag->getCompoundTag("Commands"), $entity->getSkin(), $entity->getLocation()));
-                                        // TODO: QueueSytem (don't spam async task)
-                                        if (!$entity->isFlaggedForDespawn()) {
-                                            $entity->flagForDespawn();
-                                        }
-                                    }
-                                }
-
-                                if ($error === 0) {
-                                    $sender->sendMessage(TextFormat::GREEN . "The migration was successful, you can safely remove the Slapper plugin now");
-                                } else {
-                                    $sender->sendMessage(TextFormat::RED . "(" . $error . " error found) " . TextFormat::YELLOW . "It seems that the migration is not going well, please fix the error so that it can be fully migrated. Don't delete Slapper Plugin now");
-                                }
-                            }
-
-                            return true;
-                        }
-
-                        if (isset($plugin->migrateNPC[$sender->getName()], $args[1]) && $args[1] === "cancel") {
-                            $sender->sendMessage(TextFormat::GREEN . "Migrating NPC cancelled!");
-                            unset($plugin->migrateNPC[$sender->getName()]);
-                            return true;
-                        }
-                    } else {
-                        $sender->sendMessage(TextFormat::RED . "Slapper plugin is missing, cannnot migrating.");
-                    }
-                    break;
                 case "list":
                     if (!$sender->hasPermission("snpc.list")) {
                         return true;
                     }
 
-                    foreach ($plugin->getServer()->getLevels() as $world) {
+                    foreach ($plugin->getServer()->getWorldManager()->getWorlds() as $world) {
                         $entityNames = array_map(static function (Entity $entity): string {
-                            return TextFormat::YELLOW . "ID: (" . $entity->getId() . ") " . TextFormat::DARK_GREEN . $entity->getNameTag() . " §7-- §3" . $entity->getLevel()->getFolderName() . ": " . $entity->getFloorX() . "/" . $entity->getFloorY() . "/" . $entity->getFloorZ();
+                            return TextFormat::YELLOW . "ID: (" . $entity->getId() . ") " . TextFormat::DARK_GREEN . $entity->getNameTag() . " §7-- §3" . $entity->getWorld()->getFolderName() . ": " . $entity->getPosition()->getFloorX() . "/" . $entity->getPosition()->getFloorY() . "/" . $entity->getPosition()->getFloorZ();
                         }, array_filter($world->getEntities(), static function (Entity $entity): bool {
                             return $entity instanceof BaseNPC or $entity instanceof CustomHuman;
                         }));
@@ -290,11 +217,11 @@ class Commands extends PluginCommand
                     }
                     break;
                 default:
-                    $sender->sendMessage("§7---- ---- [ §3SimpleNPC§7 ] ---- ----\n§bAuthor: @brokiem\n§3Source Code: github.com/brokiem/SimpleNPC\nVersion " . $this->getPlugin()->getDescription()->getVersion() . "\n\n§eCommand List:\n§2» /snpc spawn <type> <nametag> <canWalk> <skinUrl>\n§2» /snpc edit <id>\n§2» /snpc remove <id>\n§2» /snpc migrate <confirm | cancel>\n§2» /snpc list\n§7---- ---- ---- - ---- ---- ----");
+                    $sender->sendMessage("§7---- ---- [ §3SimpleNPC§7 ] ---- ----\n§bAuthor: @brokiem\n§3Source Code: github.com/brokiem/SimpleNPC\nVersion " . $this->getOwningPlugin()->getDescription()->getVersion() . "\n\n§eCommand List:\n§2» /snpc spawn <type> <nametag> <canWalk> <skinUrl>\n§2» /snpc edit <id>\n§2» /snpc remove <id>\n§2» /snpc migrate <confirm | cancel>\n§2» /snpc list\n§7---- ---- ---- - ---- ---- ----");
                     break;
             }
         } else {
-            $sender->sendMessage("§7---- ---- [ §3SimpleNPC§7 ] ---- ----\n§bAuthor: @brokiem\n§3Source Code: github.com/brokiem/SimpleNPC\nVersion " . $this->getPlugin()->getDescription()->getVersion() . "\n\n§eCommand List:\n§2» /snpc spawn <type> <nametag> <canWalk> <skinUrl>\n§2» /snpc edit <id>\n§2» /snpc remove <id>\n§2» /snpc migrate <confirm | cancel>\n§2» /snpc list\n§7---- ---- ---- - ---- ---- ----");
+            $sender->sendMessage("§7---- ---- [ §3SimpleNPC§7 ] ---- ----\n§bAuthor: @brokiem\n§3Source Code: github.com/brokiem/SimpleNPC\nVersion " . $this->getOwningPlugin()->getDescription()->getVersion() . "\n\n§eCommand List:\n§2» /snpc spawn <type> <nametag> <canWalk> <skinUrl>\n§2» /snpc edit <id>\n§2» /snpc remove <id>\n§2» /snpc migrate <confirm | cancel>\n§2» /snpc list\n§7---- ---- ---- - ---- ---- ----");
         }
 
         return parent::execute($sender, $commandLabel, $args);
