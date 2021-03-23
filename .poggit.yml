@@ -3,6 +3,7 @@ build-by-default: true
 branches:
 - master
 - dev
+- pm4
 projects:
   SimpleNPC:
     path: ""
