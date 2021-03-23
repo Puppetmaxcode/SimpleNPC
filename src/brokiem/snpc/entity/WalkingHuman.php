@@ -107,7 +107,7 @@ class WalkingHuman extends CustomHuman
         $this->randomPosition = new Vector3($x, $y + 1, $z);
     }
 
-    public function getSpeed(): float|int
+    public function getSpeed()//TODO: float|int
     {
         return ($this->isUnderwater() ? $this->speed / 2 : $this->speed);
     }
