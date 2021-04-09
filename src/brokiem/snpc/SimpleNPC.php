@@ -11,12 +11,11 @@ use brokiem\snpc\entity\CustomHuman;
 use brokiem\snpc\entity\WalkingHuman;
 use brokiem\snpc\manager\NPCManager;
 use brokiem\snpc\task\async\CheckUpdateTask;
+use brokiem\snpc\task\async\SpawnHumanNPCTask;
 use pocketmine\entity\Entity;
 use pocketmine\entity\Skin;
 use pocketmine\level\Location;
-use pocketmine\nbt\tag\ByteArrayTag;
 use pocketmine\nbt\tag\CompoundTag;
-use pocketmine\nbt\tag\StringTag;
 use pocketmine\plugin\PluginBase;
 use pocketmine\scheduler\ClosureTask;
 use pocketmine\utils\UUID;
@@ -116,11 +115,15 @@ class SimpleNPC extends PluginBase {
     }
 
     private function spawnAllNPCs(): void{
-        if (empty(glob($this->getDataFolder() . "npcs/*.json"))) { return; }
+        if(empty(glob($this->getDataFolder() . "npcs/*.json"))){
+            return;
+        }
 
         foreach(glob($this->getDataFolder() . "npcs/*.json") as $path){
             $fileContents = file_get_contents($path);
-            if ($fileContents === false) { continue; }
+            if($fileContents === false){
+                continue;
+            }
             /** @var array $decoded */
             $decoded = json_decode($fileContents, true);
 
@@ -134,48 +137,52 @@ class SimpleNPC extends PluginBase {
 
                 $this->getServer()->loadLevel($decoded["world"]);
                 $world = $this->getServer()->getLevelByName($decoded["world"]);
-                if($world === null){ continue; }
+                if($world === null){
+                    continue;
+                }
                 if(!$world->loadChunk((int)$decoded["position"][0] >> 4, (int)$decoded["position"][2] >> 4)){
                     $this->getLogger()->debug("Spawn Ignored for NPC " . basename($path, ".json") . " because chunk is not populated or chunk can't loaded");
                     continue;
                 }
 
-                foreach($this->getServer()->getLevels() as $level) {
-                    foreach($level->getEntities() as $entity) {
-                        if ($entity instanceof CustomHuman or $entity instanceof BaseNPC) {
-                            if (!$entity->isFlaggedForDespawn()){
+                foreach($this->getServer()->getLevels() as $level){
+                    foreach($level->getEntities() as $entity){
+                        if($entity instanceof CustomHuman or $entity instanceof BaseNPC){
+                            if(!$entity->isFlaggedForDespawn()){
                                 $entity->flagForDespawn();
                             }
                         }
                     }
                 }
 
-                $nbt = Entity::createBaseNBT(new Location($decoded["position"][0], $decoded["position"][1], $decoded["position"][2], $decoded["position"][3], $decoded["position"][4], $world));
                 $commands = new CompoundTag("Commands");
                 foreach($decoded["commands"] as $command){
                     $commands->setString($command, $command);
                 }
-                $nbt->setTag($commands);
-                $nbt->setShort("Walk", !$decoded["walk"] ? 0 : 1);
-                $nbt->setString("Identifier", basename($path, ".json"));
 
                 if($decoded["type"] === self::ENTITY_HUMAN || $decoded["type"] === self::ENTITY_WALKING_HUMAN){
-                    /** @phpstan-ignore-next-line */
-                    $nbt->setTag(new CompoundTag("Skin", ["Name" => new StringTag("Name", $decoded["skinId"]), "Data" => new ByteArrayTag("Data", in_array(strlen(base64_decode($decoded["skinData"])), Skin::ACCEPTED_SKIN_SIZES, true) ? base64_decode($decoded["skinData"]) : $this->getSteveSkinData()), "CapeData" => new ByteArrayTag("CapeData", strlen(base64_decode($decoded["capeData"])) === 8192 ? base64_decode($decoded["capeData"]) : ""), "GeometryName" => new StringTag("GeometryName", $decoded["geometryName"]), "GeometryData" => new ByteArrayTag("GeometryData", base64_decode($decoded["geometryData"]))]));
+                    $skin = new Skin($decoded["skinId"], in_array(strlen(base64_decode($decoded["skinData"])), Skin::ACCEPTED_SKIN_SIZES, true) ? base64_decode($decoded["skinData"]) : $this->getSteveSkinData(), strlen(base64_decode($decoded["capeData"])) === 8192 ? base64_decode($decoded["capeData"]) : "", $decoded["geometryName"], base64_decode($decoded["geometryData"]));
 
-                    $entity = $decoded["walk"] ? new WalkingHuman($world, $nbt) : new CustomHuman($world, $nbt);
+                    $this->getServer()->getAsyncPool()->submitTask(new SpawnHumanNPCTask($decoded["showNametag"] ? str_replace("{line}", PHP_EOL, $decoded["nametag"]) : null, "respawn", $this->getDataFolder(), $decoded["walk"], null, $commands, $skin, new Location($decoded["position"][0], $decoded["position"][1], $decoded["position"][2], $decoded["position"][3], $decoded["position"][4], $world)));
                 }else{
+                    $nbt = Entity::createBaseNBT(new Location($decoded["position"][0], $decoded["position"][1], $decoded["position"][2], $decoded["position"][3], $decoded["position"][4], $world));
+                    $nbt->setTag($commands);
+                    $nbt->setShort("Walk", !$decoded["walk"] ? 0 : 1);
+                    $nbt->setString("Identifier", basename($path, ".json"));
+
                     $entity = NPCManager::createEntity($decoded["type"], $world, $nbt);
                     if($entity === null){
                         $this->getLogger()->warning("Entity {$decoded["type"]} is invalid, make sure you register the entity first!");
-                        return;
+                        continue;
                     }
                     $entity->setGenericFlag(Entity::DATA_FLAG_SILENT, true);
-                }
 
-                if($decoded["showNametag"]){
-                    $entity->setNameTag(str_replace("{line}", PHP_EOL, $decoded["nametag"]));
-                    $entity->setNameTagAlwaysVisible();
+                    if($decoded["showNametag"]){
+                        $entity->setNameTag(str_replace("{line}", PHP_EOL, $decoded["nametag"]));
+                        $entity->setNameTagAlwaysVisible();
+                    }
+
+                    $entity->spawnToAll();
                 }
 
                 $this->getScheduler()->scheduleDelayedTask(new ClosureTask(function () use ($path, $entity): void{
