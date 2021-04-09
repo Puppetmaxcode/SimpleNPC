@@ -139,6 +139,15 @@ class SimpleNPC extends PluginBase {
                     $this->getLogger()->debug("Spawn Ignored for NPC " . basename($path, ".json") . " because chunk is not populated or chunk can't loaded");
                     continue;
                 }
+
+                foreach($this->getServer()->getLevels() as $level) {
+                    foreach($level->getEntities() as $entity) {
+                        if ($entity instanceof CustomHuman or $entity instanceof BaseNPC) {
+                            $entity->flagForDespawn();
+                        }
+                    }
+                }
+
                 $nbt = Entity::createBaseNBT(new Location($decoded["position"][0], $decoded["position"][1], $decoded["position"][2], $decoded["position"][3], $decoded["position"][4], $world));
                 $commands = new CompoundTag("Commands");
                 foreach($decoded["commands"] as $command){

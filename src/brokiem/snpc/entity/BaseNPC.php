@@ -16,7 +16,6 @@ class BaseNPC extends Entity {
     protected $gravity = 0.0;
 
     public function __construct(Level $level, CompoundTag $nbt){
-        $this->setCanSaveWithChunk(false);
         parent::__construct($level, $nbt);
     }
 
