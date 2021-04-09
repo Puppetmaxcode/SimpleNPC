@@ -143,7 +143,9 @@ class SimpleNPC extends PluginBase {
                 foreach($this->getServer()->getLevels() as $level) {
                     foreach($level->getEntities() as $entity) {
                         if ($entity instanceof CustomHuman or $entity instanceof BaseNPC) {
-                            $entity->flagForDespawn();
+                            if (!$entity->isFlaggedForDespawn()){
+                                $entity->flagForDespawn();
+                            }
                         }
                     }
                 }
